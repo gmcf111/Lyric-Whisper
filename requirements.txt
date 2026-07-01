@@ -32,8 +32,8 @@ onnxruntime>=1.16.0
 numpy>=1.24.0
 soundfile>=0.12.1
 
-# GPU 环境检测（缺失时自动降级为 nvidia-smi 检测）
-pynvml>=11.5.0
+# GPU 环境检测（nvidia-ml-py 提供 pynvml 模块，无弃用警告）
+nvidia-ml-py>=11.5.0
 
 # 网络下载
 truststore>=0.10.0

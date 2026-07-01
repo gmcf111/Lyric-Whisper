@@ -41,7 +41,7 @@ REQUIRED_CUDNN_DLLS = [
 
 
 def _detect_nvidia_via_pynvml() -> tuple[bool, str, str, str]:
-    """优先用 pynvml 检测 NVIDIA 显卡。返回 (found, name, driver, cuda_ver)。"""
+    """用 nvidia-ml-py（pynvml 模块）检测 NVIDIA 显卡。返回 (found, name, driver, cuda_ver)。"""
     try:
         import pynvml  # type: ignore
         try:
