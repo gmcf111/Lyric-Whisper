@@ -88,9 +88,18 @@ class PipelineWorker(BaseWorker):
             self._emit(0.05, f"正在分离人声（{'GPU' if self.use_gpu else 'CPU'}）…")
             self._engine = VocalSeparator(use_gpu=self.use_gpu)
             try:
+                # 模型缺失时自动下载缓存（进度占 5%~15%）
+                self._engine.ensure_model(
+                    progress_cb=lambda r: self._emit(
+                        0.05 + r * 0.10, "正在下载人声分离模型…"
+                    ),
+                )
+                if self._cancelled:
+                    self.cancelled.emit()
+                    return
                 self._engine.separate(
                     temp_wav, vocals_wav,
-                    progress_cb=lambda r: self._emit(0.05 + r * 0.45, "正在分离人声…"),
+                    progress_cb=lambda r: self._emit(0.15 + r * 0.35, "正在分离人声…"),
                 )
             except SeparationCancelled:
                 self.cancelled.emit()

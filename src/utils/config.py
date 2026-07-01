@@ -27,9 +27,10 @@ class AppConfig:
         self.temp_dir = os.path.join(self.root, "temp")
         self.output_dir = os.path.join(self.root, "output")
 
-        # ffmpeg 可执行文件
-        self.ffmpeg_exe = os.path.join(self.ffmpeg_dir, "ffmpeg.exe")
-        self.ffprobe_exe = os.path.join(self.ffmpeg_dir, "ffprobe.exe")
+        # ffmpeg 可执行文件：优先外置 ffmpeg/（便于用户升级替换），
+        # 其次打包内置的 _internal/ffmpeg/。
+        self.ffmpeg_exe = self._resolve_bundled("ffmpeg", "ffmpeg.exe")
+        self.ffprobe_exe = self._resolve_bundled("ffmpeg", "ffprobe.exe")
 
         # 模型路径（可配置）
         self.whisper_model_dir = os.path.join(self.models_dir, "whisper")
@@ -54,6 +55,22 @@ class AppConfig:
     def _ensure_dirs(self) -> None:
         for d in (self.ffmpeg_dir, self.models_dir, self.temp_dir, self.output_dir):
             os.makedirs(d, exist_ok=True)
+
+    def _resolve_bundled(self, subdir: str, name: str) -> str:
+        """解析随程序分发的资源路径。
+
+        查找顺序：
+        1. 程序根目录下 <subdir>/<name>（外置，便于用户替换升级）
+        2. 打包内置 _internal/<subdir>/<name>（PyInstaller onedir 收集到此）
+        均不存在时返回外置路径（供后续按 PATH 兜底或提示用户）。
+        """
+        external = os.path.join(self.root, subdir, name)
+        if os.path.isfile(external):
+            return external
+        internal = os.path.join(self.root, "_internal", subdir, name)
+        if os.path.isfile(internal):
+            return internal
+        return external
 
     def _setup_model_cache_dirs(self) -> None:
         """把 torch hub / HF 缓存目录指向程序目录下 models/，路径可配置。

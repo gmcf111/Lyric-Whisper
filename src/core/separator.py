@@ -23,6 +23,21 @@ def _to_device(use_gpu: bool) -> str:
     return "cuda" if use_gpu else "cpu"
 
 
+# Demucs htdemucs 模型（Meta 官方 CDN）
+_DEMUCS_CKPT_URL = (
+    "https://dl.fbaipublicfiles.com/demucs/"
+    "hybrid_transformer/955717e8-8726e21a.th"
+)
+_DEMUCS_CKPT_NAME = "955717e8-8726e21a.th"
+
+
+def _demucs_checkpoint_path() -> str:
+    """返回 demucs 检查点缓存路径（与界面下载逻辑一致）。"""
+    ckpt_dir = os.path.join(torch.hub.get_dir(), "checkpoints")
+    return os.path.join(ckpt_dir, _DEMUCS_CKPT_NAME)
+
+
+
 class VocalSeparator:
     """封装 demucs 分离逻辑，支持进度回调与取消。"""
 
@@ -37,15 +52,106 @@ class VocalSeparator:
     def cancel(self) -> None:
         self._cancelled = True
 
+    def ensure_model(
+        self,
+        progress_cb: Callable[[float], None] | None = None,
+    ) -> None:
+        """确保 demucs 模型已缓存，缺失则自动下载。
+
+        progress_cb: 下载进度回调，参数为 0~1。
+        下载中若 self._cancelled 置位则抛出 SeparationCancelled。
+        """
+        ckpt = _demucs_checkpoint_path()
+        # 已存在且大小合理则视为可用
+        if os.path.isfile(ckpt) and os.path.getsize(ckpt) >= 1_000_000:
+            return
+
+        # 清理可能残留的损坏/临时文件
+        self._cleanup_corrupt_checkpoint()
+
+        os.makedirs(os.path.dirname(ckpt), exist_ok=True)
+        tmp = ckpt + ".tmp"
+        try:
+            import httpx
+            from ..utils.hf_session import make_hf_client
+        except Exception as e:
+            raise SeparationError(f"初始化下载组件失败：{e}") from e
+
+        client = make_hf_client()
+        try:
+            stream_timeout = httpx.Timeout(connect=10, read=30, write=10, pool=10)
+            with client.stream(
+                "GET", _DEMUCS_CKPT_URL,
+                timeout=stream_timeout, follow_redirects=True,
+            ) as resp:
+                resp.raise_for_status()
+                total = int(resp.headers.get("Content-Length", 0) or 0)
+                downloaded = 0
+                with open(tmp, "wb") as f:
+                    for chunk in resp.iter_bytes(1024 * 256):
+                        if self._cancelled:
+                            raise SeparationCancelled("用户取消分离任务")
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total > 0 and progress_cb:
+                            progress_cb(downloaded / total)
+            os.replace(tmp, ckpt)
+        except SeparationCancelled:
+            self._safe_remove(tmp)
+            raise
+        except Exception as e:
+            self._safe_remove(tmp)
+            raise SeparationError(
+                f"人声分离模型自动下载失败，请检查网络连接后重试。\n原始错误：{e}"
+            ) from e
+        finally:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+    @staticmethod
+    def _safe_remove(path: str) -> None:
+        try:
+            if os.path.isfile(path):
+                os.remove(path)
+        except Exception:
+            pass
+
     def _load_model(self):
         if self._model is not None:
             return self._model
         from demucs.pretrained import get_model
-        model = get_model(self._model_name)
+        try:
+            model = get_model(self._model_name)
+        except Exception as e:
+            # 加载失败可能是缓存文件损坏（如自动下载中断），
+            # 清理损坏的检查点后给出明确提示，避免后续永久报错。
+            self._cleanup_corrupt_checkpoint()
+            raise SeparationError(
+                f"加载 Demucs 模型失败（缓存可能已损坏并已清理）。\n"
+                f"请通过界面「下载模型」按钮重新下载。\n原始错误：{e}"
+            ) from e
         model.to(self.device)
         model.eval()
         self._model = model
         return model
+
+    def _cleanup_corrupt_checkpoint(self) -> None:
+        """清理可能损坏的 demucs 模型缓存文件。"""
+        try:
+            import torch
+            hub_dir = torch.hub.get_dir()
+            ckpt_dir = os.path.join(hub_dir, "checkpoints")
+            if os.path.isdir(ckpt_dir):
+                for name in os.listdir(ckpt_dir):
+                    if name.endswith(".th"):
+                        f = os.path.join(ckpt_dir, name)
+                        # 过小的文件几乎肯定是损坏的（完整模型约 80MB）
+                        if os.path.getsize(f) < 1_000_000:
+                            os.remove(f)
+        except Exception:
+            pass
 
     def _make_callback(self):
         """构造传给 apply_model 的回调。不同 demucs 版本签名兼容。"""
