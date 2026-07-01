@@ -31,6 +31,22 @@ python main.py
 - **GPU**: CUDA 12.6 + cuDNN 9
 - **打包**: PyInstaller (onedir)
 
+## 构建
+
+使用 PyInstaller 构建可执行文件：
+
+```bash
+pyinstaller LyricWhisper.spec --noconfirm
+```
+
+### 构建前准备
+
+1. **ffmpeg**：将 `ffmpeg.exe` 和 `ffprobe.exe` 放入项目根目录下的 `ffmpeg/` 文件夹中，
+   打包脚本会自动将其收集到 `_internal/ffmpeg/` 目录。
+   可从 [FFmpeg 官网](https://ffmpeg.org/download.html) 或 [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) 下载 Windows 构建版。
+
+2. **模型权重**：Whisper 和 Demucs 模型权重不打入 exe，首次运行时会自动下载缓存。
+
 ## 许可证
 
-GNU General Public License v3.0
+GNU Affero General Public License v3.0 (AGPL-3.0)
