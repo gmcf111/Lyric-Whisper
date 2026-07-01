@@ -134,6 +134,20 @@ class PipelineWorker(BaseWorker):
             # 4) 构建歌词行
             lines = build_lines(result.segments)
 
+            # 繁体自动转为简体（中文 zh / 粤语 yue，繁体多见于粤语与港台中文）
+            lang = (result.language or "").lower()
+            if cfg.get("simplified_chinese", False) and (
+                lang.startswith("zh") or lang.startswith("yue")
+            ):
+                try:
+                    from zhconv import convert as _zh_convert
+                    for line in lines:
+                        line.text = _zh_convert(line.text, "zh-cn")
+                        for w in line.words:
+                            w.word = _zh_convert(w.word, "zh-cn")
+                except Exception:
+                    pass  # zhconv 转换失败时静默跳过，不影响主流程
+
             class PipelineResult:
                 pass
             res = PipelineResult()

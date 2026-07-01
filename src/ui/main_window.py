@@ -210,6 +210,15 @@ class MainWindow(QMainWindow):
             self.lang_combo.addItem(name, code)
         self.lang_combo.currentIndexChanged.connect(self.on_language_changed)
         col1.addWidget(self.lang_combo)
+
+        # 繁简转换
+        self.simplified_toggle = QCheckBox("繁体自动转为简体")
+        self.simplified_toggle.setChecked(self.config.get("simplified_chinese", False))
+        self.simplified_toggle.toggled.connect(
+            lambda checked: self.config.set("simplified_chinese", checked)
+        )
+        col1.addWidget(self.simplified_toggle)
+
         pl.addLayout(col1)
 
         # 人声分离模型 + Whisper 模型

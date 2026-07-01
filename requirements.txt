@@ -35,6 +35,9 @@ soundfile>=0.12.1
 # GPU 环境检测（nvidia-ml-py 提供 pynvml 模块，无弃用警告）
 nvidia-ml-py>=11.5.0
 
+# 繁简中文转换
+zhconv>=1.4.0
+
 # 网络下载
 truststore>=0.10.0
 httpx>=0.27.0

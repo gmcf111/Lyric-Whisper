@@ -35,6 +35,7 @@ HEAVY_PACKAGES = [
     "soundfile", "tokenizers", "onnxruntime",
     "lameenc",
     "PySide6",
+    "zhconv",
     "truststore", "httpx", "huggingface_hub",
 ]
 for pkg in HEAVY_PACKAGES:
