@@ -116,7 +116,24 @@ class Transcriber:
         except TranscriptionError:
             raise
         except Exception as e:
-            raise TranscriptionError(f"加载 Whisper 模型失败（{self.device}）：{e}") from e
+            # GPU 显存不足时自动降级到 CPU
+            err_msg = str(e).lower()
+            if self.use_gpu and ("out of memory" in err_msg or "oom" in err_msg):
+                import gc
+                import torch
+                gc.collect()
+                torch.cuda.empty_cache()
+                self.use_gpu = False
+                self.device = "cpu"
+                self.compute_type = "int8"
+                self._model = WhisperModel(
+                    model_size_or_path=path,
+                    device=self.device,
+                    compute_type=self.compute_type,
+                    local_files_only=True,
+                )
+            else:
+                raise TranscriptionError(f"加载 Whisper 模型失败（{self.device}）：{e}") from e
         return self._model
 
     def transcribe(
@@ -129,6 +146,7 @@ class Transcriber:
         """转写音频，返回 segments 列表（已物化，含词级时间戳）。
 
         language: None=自动检测；ISO 639-1 代码=手动指定（跳过自动检测）。
+        GPU 显存不足时自动降级到 CPU 重试。
         """
         if not os.path.isfile(audio_path):
             raise TranscriptionError(f"音频文件不存在：{audio_path}")
@@ -136,6 +154,50 @@ class Transcriber:
         self._cancelled = False
         model = self._load_model()
 
+        try:
+            return self._run_transcribe(
+                model, audio_path, language, total_duration, progress_cb
+            )
+        except TranscriptionCancelled:
+            raise
+        except Exception as e:
+            # GPU 转写过程中显存不足，降级到 CPU 重试
+            if self.use_gpu and self._is_oom(e):
+                self._fallback_to_cpu()
+                model = self._load_model()
+                return self._run_transcribe(
+                    model, audio_path, language, total_duration, progress_cb
+                )
+            raise TranscriptionError(f"转写出错：{e}") from e
+
+    @staticmethod
+    def _is_oom(e: Exception) -> bool:
+        msg = str(e).lower()
+        return "out of memory" in msg or "oom" in msg or "cuda" in msg and "memory" in msg
+
+    def _fallback_to_cpu(self) -> None:
+        """GPU 降级到 CPU：清理显存，重置设备参数。"""
+        self._model = None
+        self.use_gpu = False
+        self.device = "cpu"
+        self.compute_type = "int8"
+        try:
+            import gc
+            import torch
+            gc.collect()
+            torch.cuda.empty_cache()
+        except Exception:
+            pass
+
+    def _run_transcribe(
+        self,
+        model,
+        audio_path: str,
+        language: str | None,
+        total_duration: float | None,
+        progress_cb: Callable[[float], None] | None,
+    ):
+        """执行转写并物化 segments。"""
         try:
             segments_iter, info = model.transcribe(
                 audio_path,
@@ -165,7 +227,7 @@ class Transcriber:
         except TranscriptionCancelled:
             raise
         except Exception as e:
-            raise TranscriptionError(f"转写出错：{e}") from e
+            raise RuntimeError(str(e)) from e
 
         if progress_cb:
             progress_cb(1.0)
@@ -181,10 +243,15 @@ class Transcriber:
         return res
 
     def release(self) -> None:
+        model = self._model
         self._model = None
-        if self.use_gpu:
-            try:
-                import torch
+        del model
+        try:
+            import gc
+            import torch
+            gc.collect()
+            if self.use_gpu and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            except Exception:
-                pass
+                torch.cuda.synchronize()
+        except Exception:
+            pass

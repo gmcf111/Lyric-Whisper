@@ -249,6 +249,16 @@ class VocalSeparator:
         os.makedirs(os.path.dirname(os.path.abspath(output_vocals)), exist_ok=True)
         self._save_wav(vocals, output_vocals, target_sr)
 
+        # 显式释放 GPU 张量，避免后续转写时显存不足 (CUDA OOM)
+        del out, vocals, wav_in, wav
+        if self.use_gpu:
+            try:
+                import gc
+                gc.collect()
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+
         if progress_cb:
             progress_cb(1.0)
         return output_vocals
@@ -263,10 +273,30 @@ class VocalSeparator:
         sf.write(path, wav, sample_rate, subtype="PCM_16")
 
     def release(self) -> None:
-        """释放模型显存/内存。"""
+        """释放模型显存/内存。
+
+        关键顺序（缺一不可，否则显存无法真正归还）：
+        1. 把模型搬回 CPU，斩断其在显存上的权重占用
+           （self._model = None 只断开一个引用，若模型仍在 GPU 上且被
+            内部子模块引用，引用计数不归零，显存不会释放）。
+        2. 置空引用后 gc.collect() 强制析构模型对象。
+        3. empty_cache() 只能回收「已无 Python 引用」的显存块，
+           必须在 gc 之后调用才有效。
+        4. synchronize() 确保释放在下一个模型加载前真正完成。
+        """
+        model = self._model
         self._model = None
-        if self.use_gpu:
-            try:
+        try:
+            if model is not None:
+                model.to("cpu")  # 搬回内存，切断显存权重占用
+        except Exception:
+            pass
+        del model
+        try:
+            import gc
+            gc.collect()
+            if self.use_gpu and torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            except Exception:
-                pass
+                torch.cuda.synchronize()
+        except Exception:
+            pass
