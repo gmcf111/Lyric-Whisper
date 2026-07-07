@@ -37,6 +37,13 @@ HEAVY_PACKAGES = [
     "PySide6",
     "zhconv",
     "truststore", "httpx", "huggingface_hub",
+    # 强制对齐模块（whisperx + 子依赖）
+    # whisperx 通过懒加载，align 不依赖 pyannote.audio，对齐功能可独立工作
+    "whisperx",
+    "transformers",
+    "nltk",
+    "pandas",
+    "omegaconf",
 ]
 for pkg in HEAVY_PACKAGES:
     try:
@@ -80,6 +87,20 @@ extra_hidden = [
     "numpy._core.multiarray",
     "numpy.core._multiarray_umath",
     "numpy._core._multiarray_umath",
+    # whisperx 对齐功能子模块（懒加载，需显式声明）
+    "whisperx",
+    "whisperx.alignment",
+    "whisperx.audio",
+    "whisperx.utils",
+    "whisperx.schema",
+    "whisperx.log_utils",
+    "whisperx.asr",
+    # transformers / nltk / pandas 子模块
+    "transformers.models.wav2vec2",
+    "transformers.models.wav2vec2.processing",
+    "transformers.models.wav2vec2.modeling_wav2vec2",
+    "nltk.tokenize.punkt",
+    "pandas._libs.tslibs.timedeltas",
 ]
 hiddenimports += extra_hidden
 
@@ -97,6 +118,21 @@ a = Analysis(
         "tkinter",
         # 排除测试相关
         "pytest", "tests",
+        # 排除说话人分离（diarization）相关包：whisperx.align 不依赖，
+        # 且 pyannote.audio 会显著增加打包体积（数百 MB）
+        "pyannote.audio",
+        "pyannote.core",
+        "pyannote.database",
+        "pyannote.metrics",
+        "pyannote.pipeline",
+        "linagora_rtt",
+        "asteroid_filterbanks",
+        "sortwise",
+        # 排除 Jupyter / IPython / Notebook（whisperx 部分子依赖可能引入）
+        "IPython", "ipykernel", "jupyter", "notebook",
+        "jupyter_client", "jupyter_core",
+        # 排除 matplotlib（whisperx 部分示例用到，运行时不需要）
+        "matplotlib",
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

@@ -249,13 +249,18 @@ class VocalSeparator:
         os.makedirs(os.path.dirname(os.path.abspath(output_vocals)), exist_ok=True)
         self._save_wav(vocals, output_vocals, target_sr)
 
-        # 显式释放 GPU 张量，避免后续转写时显存不足 (CUDA OOM)
+        # 显式释放 GPU 张量与 MKL 内存池，避免后续转写时出现
+        # "mkl malloc:failed to allocate memory"（demucs 释放后 MKL 内存未归还系统）
         del out, vocals, wav_in, wav
-        if self.use_gpu:
+        try:
+            from ..utils.memory import release_engine_memory
+            release_engine_memory(use_gpu=self.use_gpu)
+        except Exception:
             try:
                 import gc
                 gc.collect()
-                torch.cuda.empty_cache()
+                if self.use_gpu:
+                    torch.cuda.empty_cache()
             except Exception:
                 pass
 
@@ -283,6 +288,9 @@ class VocalSeparator:
         3. empty_cache() 只能回收「已无 Python 引用」的显存块，
            必须在 gc 之后调用才有效。
         4. synchronize() 确保释放在下一个模型加载前真正完成。
+        5. free_mkl_buffers() 释放 MKL 内存池中保留的缓冲区，
+           避免 demucs 释放后加载 faster-whisper 时出现
+           "mkl malloc:failed to allocate memory"。
         """
         model = self._model
         self._model = None
@@ -293,10 +301,14 @@ class VocalSeparator:
             pass
         del model
         try:
-            import gc
-            gc.collect()
-            if self.use_gpu and torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.synchronize()
+            from ..utils.memory import release_engine_memory
+            release_engine_memory(use_gpu=self.use_gpu)
         except Exception:
-            pass
+            try:
+                import gc
+                gc.collect()
+                if self.use_gpu and torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+            except Exception:
+                pass

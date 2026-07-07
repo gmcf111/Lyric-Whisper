@@ -133,6 +133,33 @@ QToolButton#themeBtn {{
     border-radius: 5px; padding: 6px 12px; font-weight: 600;
 }}
 QToolButton#themeBtn:hover {{ background: {v['secondary_hover']}; }}
+QTabWidget::pane {{
+    border: 1px solid {v['border']}; border-radius: 6px;
+    top: -1px; background: {v['panel']};
+}}
+QTabWidget::tab-bar {{ left: 6px; }}
+QTabBar::tab {{
+    background: {v['panel_alt']}; color: {v['text_muted']};
+    border: 1px solid {v['border']}; border-bottom: none;
+    border-top-left-radius: 6px; border-top-right-radius: 6px;
+    padding: 6px 16px; margin-right: 2px; font-weight: 600;
+}}
+QTabBar::tab:selected {{
+    background: {v['panel']}; color: {v['text_strong']};
+    border-bottom: 2px solid {v['accent']};
+}}
+QTabBar::tab:hover:!selected {{
+    background: {v['secondary']}; color: {v['text']};
+}}
+QTabBar::tab:disabled {{ color: {v['disabled_fg']}; background: {v['disabled_bg']}; }}
+QPlainTextEdit {{
+    background: {v['panel']}; color: {v['text']};
+    border: 1px solid {v['border']}; border-radius: 4px;
+    padding: 6px 8px; font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 13px;
+}}
+QPlainTextEdit:focus {{ border: 1px solid {v['accent']}; }}
+QPlainTextEdit:disabled {{ background: {v['disabled_bg']}; color: {v['disabled_fg']}; }}
 """
 
 
